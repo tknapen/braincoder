@@ -518,7 +518,8 @@ class GaussianPRF2D(EncodingModel):
                          weights=weights, verbosity=logging.INFO, **kwargs)
 
         if paradigm is not None:
-            self.paradigm.columns = pd.MultiIndex.from_frame(self.grid_coordinates)
+            self.paradigm.columns = pd.MultiIndex.from_frame(
+                self.grid_coordinates)
 
     def get_rf(self, as_frame=False, unpack=False):
 
@@ -595,6 +596,7 @@ class GaussianPRF2D(EncodingModel):
     def unpack_stimulus(self, stimulus):
         return np.reshape(stimulus, (-1, self.n_x, self.n_y))
 
+
 class GaussianPRF2DAngle(GaussianPRF2D):
 
     parameter_labels = ['theta', 'ecc', 'sd', 'baseline', 'amplitude']
@@ -651,8 +653,8 @@ class GaussianPRF2DAngle(GaussianPRF2D):
         parameters = parameters[['x', 'y', 'sd', 'baseline', 'amplitude']]
 
         return GaussianPRF2D(grid_coordinates=self.grid_coordinates,
-                paradigm=self.paradigm, data=self.data, parameters=parameters,
-                     weights=self.weights, omega=self.omega)
+                             paradigm=self.paradigm, data=self.data, parameters=parameters,
+                             weights=self.weights, omega=self.omega)
 
 
 class GaussianPRF2DWithHRF(GaussianPRF2D, HRFEncodingModel):
@@ -668,6 +670,7 @@ class GaussianPRF2DWithHRF(GaussianPRF2D, HRFEncodingModel):
                                           self.parameters[[
                                               'baseline']], weights=self.get_rf().T,
                                           hrf_model=self.hrf_model)
+
 
 class GaussianPRF2DAngleWithHRF(GaussianPRF2DAngle, HRFEncodingModel):
 
@@ -688,9 +691,10 @@ class GaussianPRF2DAngleWithHRF(GaussianPRF2DAngle, HRFEncodingModel):
         no_hrf_model = super().to_xy_model()
 
         return GaussianPRF2DWithHRF(grid_coordinates=self.grid_coordinates,
-                paradigm=self.paradigm, data=self.data, parameters=no_hrf_model.parameters,
-                     weights=self.weights, omega=self.omega,
-                     hrf_model=self.hrf_model)
+                                    paradigm=self.paradigm, data=self.data, parameters=no_hrf_model.parameters,
+                                    weights=self.weights, omega=self.omega,
+                                    hrf_model=self.hrf_model)
+
 
 class DifferenceOfGaussiansPRF2D(GaussianPRF2D):
 
@@ -840,72 +844,8 @@ class LinearModelWithBaselineHRF(LinearModelWithBaseline, HRFEncodingModel):
         return LinearModelWithBaseline._predict(self, paradigm, parameters, weights)
 
 
-class DivisiveNormalizationGaussianPRF2D(GaussianPRF2D):
-    # Amplitude is as a fraction of the positive amplitude and is limited to be within [0, 1]
-    # srf factor is limited to be above 1
-    parameter_labels = ['x', 'y', 'sd_activation', 'constant_activation',
-                        'amplitude_activation', 'sd_normalization', 'constant_normalization',
-                        'amplitude_normalization']
 
-    @tf.function
-    def _transform_parameters_forward(self, parameters):
-        return tf.concat([parameters[:, 0][:, tf.newaxis],
-                          parameters[:, 1][:, tf.newaxis],
-                          tf.math.softplus(parameters[:, 2][:, tf.newaxis]),
-                          parameters[:, 3][:, tf.newaxis],
-                          parameters[:, 4][:, tf.newaxis],
-                          tf.math.softplus(parameters[:, 5][:, tf.newaxis]),
-                          parameters[:, 6][:, tf.newaxis],
-                          parameters[:, 7][:, tf.newaxis]], axis=1)
-
-    @tf.function
-    def _transform_parameters_backward(self, parameters):
-        return tf.concat([parameters[:, 0][:, tf.newaxis],
-                          parameters[:, 1][:, tf.newaxis],
-                          tf.math.softplus_inverse(parameters[:, 2][:, tf.newaxis]),
-                          parameters[:, 3][:, tf.newaxis],
-                          parameters[:, 4][:, tf.newaxis],
-                          tf.math.softplus_inverse(parameters[:, 5][:, tf.newaxis]),
-                          parameters[:, 6][:, tf.newaxis],
-                          parameters[:, 7][:, tf.newaxis]], axis=1)
-
-
-    @tf.function
-    def _basis_predictions(self, paradigm, parameters):
-        # paradigm: n_batches x n_timepoints x n_stimulus_features
-        # parameters:: n_batches x n_voxels x n_parameters
-
-        # norm: n_batches x n_timepoints x n_voxels
-
-        # output: n_batches x n_timepoints x n_voxels
-
-        # activation and normalization have the same position
-        activation_parameters = parameters[:, :, :3]
-        normalization_parameters = parameters[:, :, [0,1,5,6,7]]
-
-        activation_rf = self._get_rf(self.grid_coordinates, activation_parameters)
-        normalization_rf = self._get_rf(self.grid_coordinates, normalization_parameters)
-
-        constant_activation = parameters[:, tf.newaxis, :, 3]
-        constant_normalization = parameters[:, tf.newaxis, :, 6]
-
-        activation_tc = tf.tensordot(paradigm, activation_rf, (2, 2))[:, :, 0, :] + constant_activation
-        normalization_tc = tf.tensordot(paradigm, normalization_rf, (2, 2))[:, :, 0, :] + constant_normalization
-
-        timecourse = (activation_tc/normalization_tc) - (constant_activation/constant_normalization)
-
-        return timecourse
-
-class DivisiveNormalizationGaussianPRF2DWithHRF(DivisiveNormalizationGaussianPRF2D, HRFEncodingModel):
-
-    def __init__(self, grid_coordinates=None, paradigm=None, data=None, parameters=None,
-                 weights=None, hrf_model=None, verbosity=logging.INFO):
-
-        super().__init__(grid_coordinates, paradigm, data, parameters, weights, verbosity,
-                         hrf_model=hrf_model)
-
-
-class CompressiveSpatialSummationGaussianPRF2D(GaussianPRF2D):
+class CSSGaussianPRF2D(GaussianPRF2D):
     # Amplitude is as a fraction of the positive amplitude and is limited to be within [0, 1]
     # srf factor is limited to be above 1
     parameter_labels = ['x', 'y', 'sd', 'baseline', 'amplitude', 'exponent']
@@ -923,11 +863,42 @@ class CompressiveSpatialSummationGaussianPRF2D(GaussianPRF2D):
     def _transform_parameters_backward(self, parameters):
         return tf.concat([parameters[:, 0][:, tf.newaxis],
                           parameters[:, 1][:, tf.newaxis],
-                          tf.math.softplus_inverse(parameters[:, 2][:, tf.newaxis]),
+                          tf.math.softplus_inverse(
+                              parameters[:, 2][:, tf.newaxis]),
                           parameters[:, 3][:, tf.newaxis],
                           parameters[:, 4][:, tf.newaxis],
                           tf.math.softplus_inverse(parameters[:, 5][:, tf.newaxis])], axis=1)
 
+    @tf.function
+    def _get_rf(self, grid_coordinates, parameters):
+        """_get_rf creates spatial kernel for receptive field parameters
+        this is the same as for the GaussianPRF2D, but
+        without the multiplication by the amplitude
+        For a nonlinear model this has to happen later,
+        at the timecourse level.
+
+        Parameters
+        ----------
+        grid_coordinates : TensorFlow.Tensor
+            the coordinates at which to evaluate the receptive field
+        parameters : TensorFlow.Tensor
+            the parameters of the receptive field
+
+        Returns
+        -------
+        TensorFlow.Tensor
+            linear kernel receptive field values
+        """
+        # n_batches x n_populations x  n_grid_spaces
+        x = grid_coordinates[:, 0][tf.newaxis, tf.newaxis, :]
+        y = grid_coordinates[:, 1][tf.newaxis, tf.newaxis, :]
+
+        # n_batches x n_populations x n_grid_spaces (broadcast)
+        mu_x = parameters[:, :, 0, tf.newaxis]
+        mu_y = parameters[:, :, 1, tf.newaxis]
+        sd = parameters[:, :, 2, tf.newaxis]
+
+        return (tf.exp(-((x-mu_x)**2 + (y-mu_y)**2)/(2*sd**2)))
 
     @tf.function
     def _basis_predictions(self, paradigm, parameters):
@@ -942,18 +913,123 @@ class CompressiveSpatialSummationGaussianPRF2D(GaussianPRF2D):
         baseline = parameters[:, tf.newaxis, :, 3]
         amplitude = parameters[:, tf.newaxis, :, 4]
         exponent = parameters[:, tf.newaxis, :, 5]
-        # set amplitude to 1 for compression, then multiplication by amplitude
-        parameters[:, :, 4] = 1
-        result = (tf.tensordot(paradigm, rf, (2, 2))[:, :, 0, :] ** exponent) * amplitude + baseline
-        # put back the original amplitude
-        parameters[:, :, 4] = amplitude[:, 0, :, 4]]
+
+        result = ((tf.tensordot(paradigm, rf, (2, 2))[
+                  :, :, 0, :] ** exponent) * amplitude) + baseline
 
         return result
 
-class CompressiveSpatialSummationGaussianPRF2DWithHRF(CompressiveSpatialSummationGaussianPRF2D, HRFEncodingModel):
 
-    def __init__(self, grid_coordinates=None, paradigm=None, data=None, parameters=None,
-                 weights=None, hrf_model=None, verbosity=logging.INFO):
+class CSSGaussianPRF2DWithHRF(CSSGaussianPRF2D,
+                              HRFEncodingModel):
 
-        super().__init__(grid_coordinates, paradigm, data, parameters, weights, verbosity,
+    def __init__(self,
+                 grid_coordinates=None,
+                 paradigm=None,
+                 data=None,
+                 parameters=None,
+                 weights=None,
+                 hrf_model=None,
+                 verbosity=logging.INFO):
+
+        super().__init__(grid_coordinates,
+                         paradigm,
+                         data,
+                         parameters,
+                         weights,
+                         verbosity,
                          hrf_model=hrf_model)
+
+
+class DivNormGaussianPRF2D(CSSGaussianPRF2D):
+    # Following Aqil et al, PNAS  2021,  ()
+    parameter_labels = ['x',
+                        'y',
+                        'sd_activation',
+                        'constant_activation',
+                        'amplitude_activation',
+                        'sd_normalization',
+                        'constant_normalization',
+                        'amplitude_normalization']
+
+    @tf.function
+    def _transform_parameters_forward(self, parameters):
+        return tf.concat([parameters[:, 0][:, tf.newaxis],
+                          parameters[:, 1][:, tf.newaxis],
+                          tf.math.softplus(parameters[:, 2][:, tf.newaxis]),
+                          parameters[:, 3][:, tf.newaxis],
+                          parameters[:, 4][:, tf.newaxis],
+                          tf.math.softplus(parameters[:, 5][:, tf.newaxis]),
+                          parameters[:, 6][:, tf.newaxis],
+                          parameters[:, 7][:, tf.newaxis]], axis=1)
+
+    @tf.function
+    def _transform_parameters_backward(self, parameters):
+        return tf.concat([parameters[:, 0][:, tf.newaxis],
+                          parameters[:, 1][:, tf.newaxis],
+                          tf.math.softplus_inverse(
+                              parameters[:, 2][:, tf.newaxis]),
+                          parameters[:, 3][:, tf.newaxis],
+                          parameters[:, 4][:, tf.newaxis],
+                          tf.math.softplus_inverse(
+                              parameters[:, 5][:, tf.newaxis]),
+                          parameters[:, 6][:, tf.newaxis],
+                          parameters[:, 7][:, tf.newaxis]], axis=1)
+
+    @tf.function
+    def _basis_predictions(self, paradigm, parameters):
+        # paradigm: n_batches x n_timepoints x n_stimulus_features
+        # parameters:: n_batches x n_voxels x n_parameters
+
+        # norm: n_batches x n_timepoints x n_voxels
+
+        # output: n_batches x n_timepoints x n_voxels
+
+        # activation and normalization have the same position
+        activation_parameters = parameters[:, :, :3]
+        normalization_parameters = tf.concat([parameters[:, :, :2],
+                                            parameters[:, :, 5:]], axis=2)
+
+        activation_rf = self._get_rf(
+            self.grid_coordinates, activation_parameters)
+        normalization_rf = self._get_rf(
+            self.grid_coordinates, normalization_parameters)
+
+        constant_activation = parameters[:, tf.newaxis, :, 3]
+        constant_normalization = parameters[:, tf.newaxis, :, 6]
+
+        amplitude_activation = parameters[:, tf.newaxis, :, 4]
+        amplitude_normalization = parameters[:, tf.newaxis, :, 7]
+
+
+        activation_tc = tf.tensordot(paradigm, activation_rf, (2, 2))[
+            :, :, 0, :] * amplitude_activation + constant_activation
+        normalization_tc = tf.tensordot(paradigm, normalization_rf, (2, 2))[
+            :, :, 0, :] * amplitude_normalization + constant_normalization
+
+        timecourse = (activation_tc/normalization_tc) - \
+            (constant_activation/constant_normalization)
+
+        return timecourse
+
+
+class DivNormGaussianPRF2DWithHRF(DivNormGaussianPRF2D,
+                                  HRFEncodingModel):
+
+    def __init__(self,
+                 grid_coordinates=None,
+                 paradigm=None,
+                 data=None,
+                 parameters=None,
+                 weights=None,
+                 hrf_model=None,
+                 verbosity=logging.INFO):
+
+        super().__init__(grid_coordinates,
+                         paradigm,
+                         data,
+                         parameters,
+                         weights,
+                         verbosity,
+                         hrf_model=hrf_model)
+
