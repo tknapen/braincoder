@@ -34,10 +34,12 @@ def format_parameters(parameters, parameter_labels=None):
         parameter_labels = [
             f'par{i+1}' for i in range(parameters.shape[1])]
 
+    if type(parameter_labels) is list:
+        parameter_labels = pd.Index(parameter_labels, name='parameter')
+
     return pd.DataFrame(parameters,
-                        columns=pd.Index(
-                            parameter_labels, name='parameter'),
-                        index=pd.Index(range(len(parameters)), name='unit')).astype(np.float32)
+                        columns=parameter_labels,
+                        index=pd.Index(range(len(parameters)), name='source')).astype(np.float32)
 
 
 def format_weights(weights):

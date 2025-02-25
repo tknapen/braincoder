@@ -48,3 +48,9 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+docs/auto_examples/
+sg_execution_times.rst
+
+.DS_store
+
+test*.ipynb
